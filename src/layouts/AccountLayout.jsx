@@ -9,7 +9,7 @@ export const AccountLayout = () => {
   const navigate = useNavigate();
 
   const handleLogout = async () => {
-    await logout();
+    if (!(await logout())) return;
     toast.success('Signed out of your account.');
     navigate('/');
   };

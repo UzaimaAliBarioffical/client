@@ -22,7 +22,7 @@ export const AdminLayout = () => {
   const navigate = useNavigate();
 
   const handleLogout = async () => {
-    await logout();
+    if (!(await logout())) return;
     toast.success('Logged out of Admin Portal.');
     navigate('/admin/login');
   };

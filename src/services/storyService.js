@@ -1,8 +1,8 @@
-import api from './api';
+import api, { apiUrl } from './api';
 
 export const storyService = {
-  async getStories(params = {}) {
-    const res = await api.get('/api/stories', { params });
+  async getStories(params = {}, options = {}) {
+    const res = await api.get('/api/stories', { ...options, params });
     return res.data;
   },
 
@@ -21,13 +21,16 @@ export const storyService = {
     return res.data;
   },
 
+  async getStoryById(id) {
+    const res = await api.get('/api/stories/id/' + id);
+    return res.data;
+  },
+
   getPreviewPdfUrl(id) {
-    const base = import.meta.env.VITE_API_URL || '';
-    return `${base}/api/stories/${id}/preview`;
+    return apiUrl(`/api/stories/${id}/preview`);
   },
 
   getFullPdfUrl(id) {
-    const base = import.meta.env.VITE_API_URL || '';
-    return `${base}/api/stories/${id}/full-content`;
+    return apiUrl(`/api/stories/${id}/full-content`);
   }
 };

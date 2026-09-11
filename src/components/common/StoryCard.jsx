@@ -1,26 +1,27 @@
+import { apiUrl } from '../../services/api';
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { BookOpen, Sparkles, User, FileText, ArrowRight } from 'lucide-react';
 import { Badge } from './Badge';
 
 export const StoryCard = ({ story }) => {
-  const coverUrl = story.coverImage
-    ? story.coverImage.startsWith('http')
-      ? story.coverImage
-      : `/${story.coverImage.replace(/\\/g, '/')}`
-    : '/placeholder-cover.svg';
+  const coverUrl = story.coverImage ? apiUrl(story.coverImage) : '/placeholder-cover.svg';
 
   return (
     <div className="group bg-white border border-[#E8E1D9] hover:border-[#581C24]/50 rounded-sm overflow-hidden flex flex-col transition-all duration-300 hover:shadow-md">
       {/* Cover Image Container */}
       <div className="relative aspect-[3/4] bg-[#F3EFEA] overflow-hidden border-b border-[#E8E1D9]">
         <img
+          loading="lazy"
+          decoding="async"
+          width="300"
+          height="400"
           src={coverUrl}
           alt={story.title}
           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
           onError={(e) => {
             e.target.onerror = null;
-            e.target.src = 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=600&q=80';
+            e.target.src = '/placeholder-cover.svg';
           }}
         />
 

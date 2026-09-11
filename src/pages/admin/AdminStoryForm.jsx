@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { adminService } from '../../services/adminService';
-import { storyService } from '../../services/storyService';
+import { apiUrl } from '../../services/api';
 import {
   Upload,
   ArrowLeft,
@@ -20,7 +20,8 @@ export const AdminStoryForm = () => {
   const navigate = useNavigate();
 
   const [categories, setCategories] = useState([]);
-  const [loading, setLoading] = useState(isEdit);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   // Form Fields
@@ -34,7 +35,7 @@ export const AdminStoryForm = () => {
   const [description, setDescription] = useState('');
   const [tags, setTags] = useState('');
   const [isFeatured, setIsFeatured] = useState(false);
-  const [status, setStatus] = useState('published');
+  const [status, setStatus] = useState('draft');
 
   // File states
   const [coverFile, setCoverFile] = useState(null);
@@ -63,47 +64,63 @@ export const AdminStoryForm = () => {
   };
 
   useEffect(() => {
-    // Load categories
-    adminService.getCategories().then((res) => {
-      if (res.success) {
-        setCategories(res.data);
-        if (!isEdit && res.data.length > 0) {
-          setCategory(res.data[0]._id);
+    let active = true;
+    setLoading(true);
+    setLoadError('');
+    const loadForm = async () => {
+      try {
+        const [categoriesRes, storyRes] = await Promise.all([
+          adminService.getCategories(),
+          isEdit ? adminService.getStory(id) : Promise.resolve(null)
+        ]);
+        if (!active) return;
+        if (!categoriesRes.success || (isEdit && !storyRes?.data)) {
+          throw new Error('Could not load story details.');
         }
-      }
-    });
-
-    // If edit, load existing story
-    if (isEdit) {
-      adminService.getStories().then((res) => {
-        if (res.success) {
-          const found = res.data.find((s) => s._id === id);
-          if (found) {
+        setCategories(categoriesRes.data);
+        if (!isEdit && categoriesRes.data.length > 0) setCategory(categoriesRes.data[0]._id);
+        if (isEdit) {
+            const found = storyRes.data;
             setTitle(found.title);
             setSlug(found.slug);
             setAuthor(found.author);
-            setCategory(found.category?._id || found.category);
+            setCategory(found.category?._id || found.category || '');
             setLanguage(found.language || 'Urdu');
             setPrice(found.price);
-            setShortDescription(found.shortDescription);
-            setDescription(found.description);
+            setShortDescription(found.shortDescription || '');
+            setDescription(found.description || '');
             setTags(found.tags ? found.tags.join(', ') : '');
             setIsFeatured(found.isFeatured);
             setStatus(found.status);
             setExistingCoverUrl(found.coverImage);
             setExistingPdfInfo(`${found.totalPages} pages currently configured`);
-          }
         }
-        setLoading(false);
-      });
-    }
+      } catch (err) {
+        if (active) setLoadError(err.response?.data?.message || err.message || 'Could not load the story form.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    loadForm();
+    return () => { active = false; };
   }, [id, isEdit]);
+
+  useEffect(() => {
+    if (!coverFile) { setCoverPreview(null); return; }
+    const url = URL.createObjectURL(coverFile);
+    setCoverPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [coverFile]);
 
   const handleCoverChange = (e) => {
     const file = e.target.files[0];
     if (file) {
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024) {
+        toast.error('Use a JPG, PNG or WebP cover up to 10MB.');
+        e.target.value = '';
+        return;
+      }
       setCoverFile(file);
-      setCoverPreview(URL.createObjectURL(file));
     }
   };
 
@@ -114,12 +131,18 @@ export const AdminStoryForm = () => {
         toast.error('Only valid PDF files are allowed.');
         return;
       }
+      if (file.size > 50 * 1024 * 1024) {
+        toast.error('The story PDF must be 50MB or smaller.');
+        e.target.value = '';
+        return;
+      }
       setPdfFile(file);
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitting || loading || loadError) return;
 
     if (!title.trim() || !author.trim() || !category) {
       toast.error('Please enter title, author, and select category.');
@@ -128,6 +151,14 @@ export const AdminStoryForm = () => {
 
     if (!isEdit && (!coverFile || !pdfFile)) {
       toast.error('Both cover image and PDF story file are required for new stories.');
+      return;
+    }
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug.trim())) {
+      toast.error('Use lowercase English letters, numbers and hyphens in the URL slug.');
+      return;
+    }
+    if (!Number.isFinite(Number(price)) || Number(price) < 0 || !shortDescription.trim() || !description.trim()) {
+      toast.error('Enter a valid price and both story descriptions.');
       return;
     }
 
@@ -183,6 +214,13 @@ export const AdminStoryForm = () => {
     );
   }
 
+  if (loadError) {
+    return <div role="alert" className="bg-white border border-rose-200 rounded p-6 space-y-3">
+      <p className="text-sm text-rose-800">{loadError}</p>
+      <Link to="/admin/stories" className="text-sm text-[#581C24] underline">Back to stories</Link>
+    </div>;
+  }
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Header */}
@@ -206,6 +244,7 @@ export const AdminStoryForm = () => {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        {categories.length === 0 && <p className="p-4 bg-amber-50 border border-amber-200 rounded text-sm">Create a category in <Link to="/admin/categories" className="underline">Category Management</Link> before uploading a story.</p>}
         {/* Basic Story Details */}
         <div className="bg-white border border-[#E8E1D9] rounded-sm p-6 shadow-2xs space-y-4">
           <h2 className="font-serif text-base font-bold text-stone-900 border-b border-[#F3EFEA] pb-2">
@@ -220,6 +259,7 @@ export const AdminStoryForm = () => {
               <input
                 type="text"
                 required
+                maxLength={200}
                 value={title}
                 onChange={handleTitleChange}
                 placeholder="e.g. Ishq e Majazi"
@@ -301,7 +341,8 @@ export const AdminStoryForm = () => {
                 min="0"
                 required
                 value={price}
-                onChange={(e) => setPrice(Number(e.target.value))}
+                step="0.01"
+                onChange={(e) => setPrice(e.target.value)}
                 className="w-full p-2.5 text-xs font-serif font-bold text-stone-900 border border-[#E8E1D9] rounded focus:outline-none focus:border-[#581C24]"
               />
             </div>
@@ -392,12 +433,7 @@ export const AdminStoryForm = () => {
               {coverPreview || existingCoverUrl ? (
                 <div className="relative border border-[#E8E1D9] rounded p-2 bg-[#FAF8F5] flex items-center gap-3">
                   <img
-                    src={
-                      coverPreview ||
-                      (existingCoverUrl?.startsWith('http')
-                        ? existingCoverUrl
-                        : `/${existingCoverUrl.replace(/\\/g, '/')}`)
-                    }
+                    src={coverPreview || apiUrl(existingCoverUrl)}
                     alt="Cover preview"
                     className="w-16 h-22 object-cover rounded border border-stone-300"
                   />
@@ -409,7 +445,7 @@ export const AdminStoryForm = () => {
                       Change File
                       <input
                         type="file"
-                        accept="image/*"
+                        accept="image/jpeg,image/png,image/webp"
                         onChange={handleCoverChange}
                         className="hidden"
                       />
@@ -423,11 +459,11 @@ export const AdminStoryForm = () => {
                     Upload Story Cover Image
                   </span>
                   <span className="text-[10px] text-stone-500 mt-1 font-mono">
-                    JPG, PNG, WebP or SVG up to 10MB
+                    JPG, PNG or WebP up to 10MB
                   </span>
                   <input
                     type="file"
-                    accept="image/*"
+                    accept="image/jpeg,image/png,image/webp"
                     onChange={handleCoverChange}
                     className="hidden"
                   />
@@ -506,7 +542,7 @@ export const AdminStoryForm = () => {
           </Link>
           <button
             type="submit"
-            disabled={submitting}
+            disabled={submitting || categories.length === 0}
             className="px-6 py-2.5 bg-[#581C24] hover:bg-[#4A121A] text-white text-xs font-semibold uppercase tracking-wider rounded shadow-md transition-all flex items-center gap-2 disabled:opacity-50"
           >
             {submitting ? (
@@ -514,7 +550,7 @@ export const AdminStoryForm = () => {
             ) : (
               <>
                 <Save className="w-4 h-4" />
-                <span>{isEdit ? 'Save Changes' : 'Upload &amp; Publish Story'}</span>
+                <span>{isEdit ? 'Save Changes' : status === 'draft' ? 'Upload Draft Story' : 'Upload & Publish Story'}</span>
               </>
             )}
           </button>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { adminService } from '../../services/adminService';
+import { apiUrl } from '../../services/api';
 import { Modal } from '../../components/common/Modal';
 import { Plus, Edit2, Trash2, FolderTree, AlertCircle, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -7,6 +8,7 @@ import toast from 'react-hot-toast';
 export const AdminCategories = () => {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   // Form Modal State
   const [modalOpen, setModalOpen] = useState(false);
@@ -25,11 +27,13 @@ export const AdminCategories = () => {
 
   const fetchCategories = async () => {
     setLoading(true);
+    setError('');
     try {
       const res = await adminService.getCategories();
-      if (res.success) setCategories(res.data);
+      if (!res.success) throw new Error('Failed to load categories.');
+      setCategories(res.data);
     } catch (err) {
-      toast.error('Failed to load categories.');
+      setError(err.response?.data?.message || 'Failed to load categories.');
     } finally {
       setLoading(false);
     }
@@ -66,8 +70,13 @@ export const AdminCategories = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitting) return;
     if (!name.trim()) {
       toast.error('Category name is required.');
+      return;
+    }
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug.trim())) {
+      toast.error('Use lowercase English letters, numbers and hyphens in the URL slug.');
       return;
     }
 
@@ -143,6 +152,7 @@ export const AdminCategories = () => {
       </div>
 
       {/* Categories Table */}
+      {error && <div role="alert" className="p-4 bg-rose-50 border border-rose-200 rounded text-sm text-rose-800">{error} <button onClick={fetchCategories} className="underline ml-2">Retry</button></div>}
       <div className="bg-white border border-[#E8E1D9] rounded-sm shadow-2xs overflow-hidden">
         {loading ? (
           <div className="flex justify-center py-16">
@@ -161,6 +171,7 @@ export const AdminCategories = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#F3EFEA]">
+                {!error && categories.length === 0 && <tr><td colSpan={5} className="p-10 text-center text-stone-500">No categories yet. Create your first category to upload stories.</td></tr>}
                 {categories.map((c) => (
                   <tr key={c._id} className="hover:bg-[#FAF8F5] transition-colors">
                     <td className="py-3 px-4 font-semibold text-stone-900">
@@ -223,7 +234,7 @@ export const AdminCategories = () => {
       {/* Form Modal (Create / Edit) */}
       <Modal
         isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={() => { if (!submitting) setModalOpen(false); }}
         title={editingCategory ? 'Edit Category' : 'Create New Category'}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -288,6 +299,21 @@ export const AdminCategories = () => {
               />
               <span>Category Enabled (Publicly visible)</span>
             </label>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-2">Category Image (Optional)
+              <input type="file" accept="image/jpeg,image/png,image/webp" className="block w-full text-xs mt-2" onChange={(event) => {
+                const file = event.target.files[0];
+                if (file && (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024)) {
+                  toast.error('Use a JPG, PNG or WebP image up to 10MB.');
+                  event.target.value = '';
+                  return;
+                }
+                setImageFile(file || null);
+              }} />
+            </label>
+            {editingCategory?.image && <img src={apiUrl(editingCategory.image)} alt="Current category" className="w-20 h-20 object-cover rounded mt-2" />}
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#F3EFEA]">

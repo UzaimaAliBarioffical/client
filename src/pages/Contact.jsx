@@ -10,7 +10,7 @@ export const Contact = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    toast.success('Your message has been received! Our support staff will respond shortly.');
+    toast('Online messages are not available yet. Please use the contact details confirmed by the administrator.');
     setName('');
     setEmail('');
     setSubject('');

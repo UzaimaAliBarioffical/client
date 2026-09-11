@@ -136,7 +136,7 @@ export const Login = () => {
 
         <div className="text-center pt-2 border-t border-[#F3EFEA] text-xs text-stone-500">
           New to QissaGhar?{' '}
-          <Link to="/register" className="text-[#581C24] font-semibold hover:underline">
+          <Link state={location.state} to="/register" className="text-[#581C24] font-semibold hover:underline">
             Create an account
           </Link>
         </div>

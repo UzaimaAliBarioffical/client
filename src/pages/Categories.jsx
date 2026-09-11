@@ -6,12 +6,12 @@ import { FolderTree, BookOpen, ArrowRight } from 'lucide-react';
 export const Categories = () => {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     categoryService.getCategories().then((res) => {
       if (res.success) setCategories(res.data);
-      setLoading(false);
-    });
+    }).catch(() => setError('Categories could not be loaded. Please try again shortly.')).finally(() => setLoading(false));
   }, []);
 
   return (
@@ -29,6 +29,8 @@ export const Categories = () => {
         </p>
       </div>
 
+      {error && <p role="alert" className="text-center text-[#581C24] py-6">{error} <button className="underline" onClick={() => window.location.reload()}>Retry</button></p>}
+      {!loading && !error && categories.length === 0 && <p className="text-center text-stone-500 py-6">New categories are coming soon.</p>}
       {loading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {Array.from({ length: 6 }).map((_, i) => (

@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { adminService } from '../../services/adminService';
 import { Badge } from '../../components/common/Badge';
 import { Modal } from '../../components/common/Modal';
+import { Pagination } from '../../components/common/Pagination';
 import {
   Search,
   Filter,
@@ -18,11 +19,16 @@ import toast from 'react-hot-toast';
 export const AdminPayments = () => {
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({ total: 0, totalPages: 1 });
+  const requestVersion = useRef(0);
 
   // Filters
   const [status, setStatus] = useState('all');
   const [paymentMethod, setPaymentMethod] = useState('all');
   const [search, setSearch] = useState('');
+  const [submittedSearch, setSubmittedSearch] = useState('');
 
   // Review Modal State
   const [selectedPayment, setSelectedPayment] = useState(null);
@@ -30,40 +36,75 @@ export const AdminPayments = () => {
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
   const [processing, setProcessing] = useState(false);
+  const [screenshotUrl, setScreenshotUrl] = useState('');
+  const [screenshotError, setScreenshotError] = useState('');
+  const [screenshotLoading, setScreenshotLoading] = useState(false);
+  const [verified, setVerified] = useState(false);
 
   const fetchPayments = async () => {
+    const request = ++requestVersion.current;
     setLoading(true);
+    setError('');
     try {
       const res = await adminService.getPayments({
         status,
         paymentMethod,
-        search,
-        limit: 50
+        search: submittedSearch,
+        page,
+        limit: 15
       });
-      if (res.success) setPayments(res.data);
+      if (request !== requestVersion.current) return;
+      if (!res.success) throw new Error('Failed to load payments.');
+      setPayments(res.data);
+      setPagination(res.pagination || { total: res.data.length, totalPages: 1 });
     } catch (err) {
-      toast.error('Failed to load payments.');
+      if (request === requestVersion.current) setError(err.response?.data?.message || 'Failed to load payments.');
     } finally {
-      setLoading(false);
+      if (request === requestVersion.current) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchPayments();
-  }, [status, paymentMethod]);
+  }, [status, paymentMethod, page, submittedSearch]);
+
+  useEffect(() => {
+    setScreenshotUrl('');
+    setScreenshotError('');
+    if (!reviewModalOpen || !selectedPayment) return;
+    const controller = new AbortController();
+    let url;
+    setScreenshotLoading(true);
+    adminService.getPaymentScreenshot(selectedPayment._id, controller.signal).then((blob) => {
+      if (controller.signal.aborted) return;
+      url = URL.createObjectURL(blob);
+      setScreenshotUrl(url);
+    }).catch(() => {
+      if (!controller.signal.aborted) setScreenshotError('Could not load the private receipt. Close and reopen this review to retry.');
+    }).finally(() => {
+      if (!controller.signal.aborted) setScreenshotLoading(false);
+    });
+    return () => {
+      controller.abort();
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [reviewModalOpen, selectedPayment]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
-    fetchPayments();
+    setPage(1);
+    setSubmittedSearch(search.trim());
   };
 
   const openReview = (p) => {
     setSelectedPayment(p);
+    setVerified(false);
+    setRejectionReason('');
     setReviewModalOpen(true);
   };
 
   const handleApprove = async () => {
-    if (!selectedPayment) return;
+    if (!selectedPayment || selectedPayment.status !== 'Pending' || !verified || processing) return;
     setProcessing(true);
     try {
       const res = await adminService.approvePayment(selectedPayment._id);
@@ -83,7 +124,7 @@ export const AdminPayments = () => {
   };
 
   const handleReject = async () => {
-    if (!selectedPayment) return;
+    if (!selectedPayment || selectedPayment.status !== 'Pending' || processing) return;
     if (!rejectionReason.trim()) {
       toast.error('Please enter a clear rejection reason.');
       return;
@@ -150,7 +191,7 @@ export const AdminPayments = () => {
             <span className="text-xs text-stone-500 font-medium">Status:</span>
             <select
               value={status}
-              onChange={(e) => setStatus(e.target.value)}
+              onChange={(e) => { setStatus(e.target.value); setPage(1); }}
               className="w-full p-2 text-xs border border-[#E8E1D9] bg-white rounded focus:outline-none"
             >
               <option value="all">All Statuses</option>
@@ -165,7 +206,7 @@ export const AdminPayments = () => {
             <span className="text-xs text-stone-500 font-medium">Method:</span>
             <select
               value={paymentMethod}
-              onChange={(e) => setPaymentMethod(e.target.value)}
+              onChange={(e) => { setPaymentMethod(e.target.value); setPage(1); }}
               className="w-full p-2 text-xs border border-[#E8E1D9] bg-white rounded focus:outline-none"
             >
               <option value="all">All Methods</option>
@@ -177,6 +218,7 @@ export const AdminPayments = () => {
       </div>
 
       {/* Payments Table */}
+      {error && <div role="alert" className="p-4 bg-rose-50 border border-rose-200 rounded text-sm text-rose-800">{error} <button onClick={fetchPayments} className="underline ml-2">Retry</button></div>}
       <div className="bg-white border border-[#E8E1D9] rounded-sm shadow-2xs overflow-hidden">
         {loading ? (
           <div className="flex justify-center py-16">
@@ -197,6 +239,7 @@ export const AdminPayments = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#F3EFEA]">
+                {!error && payments.length === 0 && <tr><td colSpan={7} className="p-10 text-center text-stone-500">No payments match these filters.</td></tr>}
                 {payments.map((p) => (
                   <tr key={p._id} className="hover:bg-[#FAF8F5] transition-colors">
                     <td className="py-3 px-4 font-semibold text-stone-900">
@@ -253,10 +296,12 @@ export const AdminPayments = () => {
         )}
       </div>
 
+      {!loading && !error && <Pagination currentPage={page} totalPages={pagination.totalPages} onPageChange={setPage} />}
+
       {/* Review Payment Modal */}
       <Modal
         isOpen={reviewModalOpen}
-        onClose={() => setReviewModalOpen(false)}
+        onClose={() => { if (!processing) { setReviewModalOpen(false); setSelectedPayment(null); } }}
         title="Payment Verification & Audit"
         maxWidth="max-w-3xl"
       >
@@ -269,21 +314,20 @@ export const AdminPayments = () => {
                   Uploaded Payment Receipt
                 </p>
                 <div className="border border-[#E8E1D9] rounded p-2 bg-stone-100 flex flex-col items-center">
+                  {screenshotLoading && <p role="status" className="py-8 text-xs">Loading private receipt...</p>}
+                  {screenshotError && <p role="alert" className="p-4 text-xs text-rose-800">{screenshotError}</p>}
+                  {screenshotUrl && <>
                   <a
-                    href={selectedPayment.screenshot}
+                    href={screenshotUrl}
                     target="_blank"
                     rel="noreferrer"
                     className="block relative group overflow-hidden rounded"
                   >
                     <img
-                      src={selectedPayment.screenshot}
+                      src={screenshotUrl}
                       alt="Receipt Proof"
                       className="max-h-80 object-contain rounded shadow-xs"
-                      onError={(e) => {
-                        e.target.onerror = null;
-                        e.target.src =
-                          'https://placehold.co/400x500/EEE/31343C?text=Receipt+Screenshot';
-                      }}
+                      onError={() => { setScreenshotError('The receipt image could not be displayed.'); setScreenshotUrl(''); }}
                     />
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-semibold gap-1">
                       <ExternalLink className="w-4 h-4" /> Open Full Screen
@@ -292,6 +336,7 @@ export const AdminPayments = () => {
                   <span className="text-[10px] text-stone-500 mt-2 font-mono">
                     Click image to inspect full-resolution original
                   </span>
+                  </>}
                 </div>
               </div>
 
@@ -374,10 +419,10 @@ export const AdminPayments = () => {
                 {/* Actions */}
                 {selectedPayment.status === 'Pending' ? (
                   <div className="space-y-3 pt-2">
-                    <p className="text-[11px] text-stone-500 leading-relaxed">
-                      Confirming approval will immediately create an active entitlement and
-                      unlock the full story PDF in the user's library.
-                    </p>
+                    <label className="flex items-start gap-2 text-xs text-stone-700 leading-relaxed">
+                      <input type="checkbox" checked={verified} onChange={(event) => setVerified(event.target.checked)} disabled={processing || !screenshotUrl} className="mt-0.5 shrink-0" />
+                      I checked the transaction ID, recipient and exact amount against the payment account records. Approval will unlock only this story for this reader.
+                    </label>
 
                     <div className="grid grid-cols-2 gap-3">
                       <button
@@ -390,8 +435,8 @@ export const AdminPayments = () => {
 
                       <button
                         onClick={handleApprove}
-                        disabled={processing}
-                        className="py-2.5 px-4 bg-emerald-700 text-white hover:bg-emerald-800 rounded text-xs font-semibold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5 shadow-sm"
+                        disabled={processing || !verified || !screenshotUrl}
+                        className="py-2.5 px-4 bg-emerald-700 text-white hover:bg-emerald-800 rounded text-xs font-semibold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50"
                       >
                         {processing ? (
                           'Verifying...'
@@ -418,7 +463,7 @@ export const AdminPayments = () => {
       {/* Reject Reason Modal */}
       <Modal
         isOpen={rejectModalOpen}
-        onClose={() => setRejectModalOpen(false)}
+        onClose={() => { if (!processing) setRejectModalOpen(false); }}
         title="Specify Payment Rejection Reason"
       >
         <div className="space-y-4">
@@ -434,6 +479,7 @@ export const AdminPayments = () => {
             <textarea
               rows={3}
               required
+              maxLength={1000}
               value={rejectionReason}
               onChange={(e) => setRejectionReason(e.target.value)}
               placeholder="e.g. Transaction ID not found in bank statement, or amount transferred does not match story price."

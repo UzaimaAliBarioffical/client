@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { paymentService } from '../../services/paymentService';
+import { apiUrl } from '../../services/api';
 import { Badge } from '../../components/common/Badge';
 import { EmptyState } from '../../components/common/EmptyState';
 import { CreditCard, Clock, AlertTriangle, CheckCircle2, ArrowRight } from 'lucide-react';
@@ -8,13 +9,21 @@ import { Link } from 'react-router-dom';
 export const AccountPayments = () => {
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [refresh, setRefresh] = useState(0);
 
   useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError('');
     paymentService.getUserPayments().then((res) => {
-      if (res.success) setPayments(res.data);
-      setLoading(false);
-    });
-  }, []);
+      if (!res.success) throw new Error('Could not load payments.');
+      if (active) setPayments(res.data);
+    }).catch((err) => {
+      if (active) setError(err.response?.data?.message || 'Could not load payment history. Please try again.');
+    }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [refresh]);
 
   if (loading) {
     return (
@@ -26,7 +35,7 @@ export const AccountPayments = () => {
 
   return (
     <div className="bg-white border border-[#E8E1D9] rounded-sm p-6 shadow-2xs">
-      <div className="flex items-center justify-between pb-4 border-b border-[#F3EFEA] mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-[#F3EFEA] mb-6">
         <div>
           <h2 className="font-serif text-xl font-bold text-[#1A1A1A]">Payment Submissions</h2>
           <p className="text-xs text-stone-500 mt-0.5">
@@ -36,9 +45,10 @@ export const AccountPayments = () => {
         <span className="text-xs font-mono bg-[#FAF8F5] border border-[#E8E1D9] px-2.5 py-1 rounded text-stone-600">
           {payments.length} Transactions
         </span>
+        <button onClick={() => setRefresh((value) => value + 1)} className="text-xs text-[#581C24] underline">Refresh Status</button>
       </div>
 
-      {payments.length === 0 ? (
+      {error ? <div role="alert" className="p-4 bg-rose-50 border border-rose-200 rounded text-sm text-rose-800">{error}</div> : payments.length === 0 ? (
         <EmptyState
           title="No payment submissions found"
           message="You haven't submitted any manual payment verification requests yet."
@@ -53,21 +63,17 @@ export const AccountPayments = () => {
               className="border border-[#E8E1D9] rounded-sm p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 hover:border-stone-400 transition-colors"
             >
               {/* Left Column: Story Details & Status */}
-              <div className="flex items-start gap-4 flex-1">
+              <div className="flex items-start gap-3 sm:gap-4 flex-1 min-w-0">
                 {p.story && (
                   <img
-                    src={
-                      p.story.coverImage
-                        ? p.story.coverImage.startsWith('http')
-                          ? p.story.coverImage
-                          : `/${p.story.coverImage.replace(/\\/g, '/')}`
-                        : '/placeholder-cover.svg'
-                    }
+                    src={p.story.coverImage ? apiUrl(p.story.coverImage) : '/placeholder-cover.svg'}
                     alt={p.story.title}
+                    loading="lazy"
+                    decoding="async"
                     className="w-14 aspect-[3/4] object-cover rounded border border-[#E8E1D9] shrink-0"
                   />
                 )}
-                <div className="space-y-1">
+                <div className="space-y-1 min-w-0 break-words">
                   <div className="flex flex-wrap items-center gap-2">
                     <h4 className="font-serif text-base font-bold text-stone-900">
                       {p.story?.title || 'Story Unavailable'}
@@ -77,7 +83,7 @@ export const AccountPayments = () => {
 
                   <p className="text-xs text-stone-500 font-mono">
                     Method: <span className="capitalize font-semibold text-stone-700">{p.paymentMethod}</span> • TRX/TID:{' '}
-                    <span className="font-bold text-[#581C24]">{p.transactionId}</span>
+                    <span className="font-bold text-[#581C24] break-all">{p.transactionId}</span>
                   </p>
 
                   <p className="text-[11px] text-stone-400">
@@ -103,6 +109,7 @@ export const AccountPayments = () => {
                 <span className="font-serif text-lg font-bold text-[#581C24]">
                   PKR {p.amount?.toLocaleString()}
                 </span>
+                <Link to={`/payment/success?payment=${p._id}`} className="text-xs underline text-[#581C24]">View Status</Link>
 
                 {p.status === 'Approved' && p.story && (
                   <Link

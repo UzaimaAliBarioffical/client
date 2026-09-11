@@ -1,19 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { paymentService } from '../../services/paymentService';
+import { apiUrl } from '../../services/api';
 import { EmptyState } from '../../components/common/EmptyState';
 import { BookOpen, Sparkles, Calendar, ArrowRight } from 'lucide-react';
 
 export const AccountLibrary = () => {
   const [stories, setStories] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [refresh, setRefresh] = useState(0);
 
   useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError('');
     paymentService.getUserLibrary().then((res) => {
-      if (res.success) setStories(res.data);
-      setLoading(false);
-    });
-  }, []);
+      if (!res.success) throw new Error('Could not load your library.');
+      if (active) setStories(res.data);
+    }).catch((err) => {
+      if (active) setError(err.response?.data?.message || 'Could not load your library. Please try again.');
+    }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [refresh]);
 
   if (loading) {
     return (
@@ -25,7 +34,7 @@ export const AccountLibrary = () => {
 
   return (
     <div className="bg-white border border-[#E8E1D9] rounded-sm p-6 shadow-2xs">
-      <div className="flex items-center justify-between pb-4 border-b border-[#F3EFEA] mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-[#F3EFEA] mb-6">
         <div>
           <h2 className="font-serif text-xl font-bold text-[#1A1A1A]">My Unlocked Library</h2>
           <p className="text-xs text-stone-500 mt-0.5">
@@ -35,9 +44,10 @@ export const AccountLibrary = () => {
         <span className="text-xs font-mono bg-[#FAF8F5] border border-[#E8E1D9] px-2.5 py-1 rounded text-stone-600">
           {stories.length} {stories.length === 1 ? 'Book' : 'Books'} Available
         </span>
+        <button onClick={() => setRefresh((value) => value + 1)} className="text-xs text-[#581C24] underline">Refresh Library</button>
       </div>
 
-      {stories.length === 0 ? (
+      {error ? <div role="alert" className="p-4 bg-rose-50 border border-rose-200 rounded text-sm text-rose-800">{error}</div> : stories.length === 0 ? (
         <EmptyState
           title="Your library is currently empty"
           message="You have not unlocked any stories yet. Explore our curated catalog, read free previews, and unlock your first tale today!"
@@ -47,11 +57,7 @@ export const AccountLibrary = () => {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
           {stories.map((story) => {
-            const coverUrl = story.coverImage
-              ? story.coverImage.startsWith('http')
-                ? story.coverImage
-                : `/${story.coverImage.replace(/\\/g, '/')}`
-              : '/placeholder-cover.svg';
+            const coverUrl = story.coverImage ? apiUrl(story.coverImage) : '/placeholder-cover.svg';
 
             return (
               <div
@@ -63,11 +69,11 @@ export const AccountLibrary = () => {
                     <img
                       src={coverUrl}
                       alt={story.title}
+                      loading="lazy"
+                      decoding="async"
                       className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                       onError={(e) => {
-                        e.target.onerror = null;
-                        e.target.src =
-                          'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=600&q=80';
+                        if (!e.currentTarget.src.endsWith('/placeholder-cover.svg')) e.currentTarget.src = '/placeholder-cover.svg';
                       }}
                     />
                     <div className="absolute top-2 right-2">

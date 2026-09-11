@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import { getAuthHeaders } from '../../services/api';
 import {
   ChevronLeft,
   ChevronRight,
@@ -17,7 +19,7 @@ import { Link } from 'react-router-dom';
 import { LockOverlay } from './LockOverlay';
 
 // Set up worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 export const PdfReader = ({
   pdfUrl,
@@ -28,152 +30,96 @@ export const PdfReader = ({
   const [pdfDoc, setPdfDoc] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
-  const [scale, setScale] = useState(1.2);
+  const [scale, setScale] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isLockedPage, setIsLockedPage] = useState(false);
-
+  const [availableWidth, setAvailableWidth] = useState(800);
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
   const renderTaskRef = useRef(null);
+  const visiblePages = hasFullAccess ? totalPages : Math.min(totalPages, previewPagesLimit);
+  const isLockedPage = !hasFullAccess && currentPage > visiblePages;
 
-  // Load PDF Document
   useEffect(() => {
-    let isMounted = true;
+    let active = true;
     setLoading(true);
+    setPdfDoc(null);
     setError(null);
     setCurrentPage(1);
-    setIsLockedPage(false);
-
-    const loadPdf = async () => {
-      try {
-        const loadingTask = pdfjsLib.getDocument({
-          url: pdfUrl,
-          withCredentials: true
-        });
-
-        const doc = await loadingTask.promise;
-        if (!isMounted) return;
-
-        setPdfDoc(doc);
-        setTotalPages(doc.numPages);
-        setLoading(false);
-      } catch (err) {
-        console.error('PDF load error:', err);
-        if (isMounted) {
-          setError(
-            err.message ||
-              'Failed to load the PDF document. Please ensure your connection is stable.'
-          );
-          setLoading(false);
-        }
-      }
-    };
-
-    loadPdf();
-
+    setScale(1);
+    const task = pdfjsLib.getDocument({
+      url: pdfUrl, withCredentials: true, httpHeaders: getAuthHeaders(),
+      isEvalSupported: false, enableXfa: false
+    });
+    task.promise.then((doc) => {
+      if (!active) return;
+      setPdfDoc(doc);
+      setTotalPages(doc.numPages);
+      setLoading(false);
+    }).catch(() => {
+      if (!active) return;
+      setError('Unable to open this edition. Please check your connection and access, then try again.');
+      setLoading(false);
+    });
     return () => {
-      isMounted = false;
+      active = false;
+      renderTaskRef.current?.cancel();
+      task.destroy().catch(() => {});
     };
   }, [pdfUrl]);
 
-  // Render Page
   useEffect(() => {
-    if (!pdfDoc || loading) return;
+    const element = containerRef.current;
+    const observer = new ResizeObserver(([entry]) => setAvailableWidth(entry.contentRect.width - (entry.contentRect.width < 640 ? 32 : 64)));
+    if (element) observer.observe(element);
+    const syncFullscreen = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', syncFullscreen);
+    return () => { observer.disconnect(); document.removeEventListener('fullscreenchange', syncFullscreen); };
+  }, []);
 
-    // Check if current page is locked
-    if (!hasFullAccess && currentPage > previewPagesLimit) {
-      setIsLockedPage(true);
-      return;
-    } else {
-      setIsLockedPage(false);
-    }
-
-    const renderPage = async () => {
+  useEffect(() => {
+    if (!pdfDoc || loading || isLockedPage) return;
+    let active = true;
+    let task;
+    (async () => {
       try {
-        if (renderTaskRef.current) {
-          renderTaskRef.current.cancel();
-        }
-
         const page = await pdfDoc.getPage(currentPage);
+        if (!active || !canvasRef.current) return;
         const canvas = canvasRef.current;
-        if (!canvas) return;
-
-        const context = canvas.getContext('2d');
-        const viewport = page.getViewport({ scale });
-
-        // High DPI handling
-        const pixelRatio = window.devicePixelRatio || 1;
-        canvas.width = viewport.width * pixelRatio;
-        canvas.height = viewport.height * pixelRatio;
-        canvas.style.width = `${viewport.width}px`;
-        canvas.style.height = `${viewport.height}px`;
-
-        context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-
-        const renderContext = {
-          canvasContext: context,
-          viewport: viewport
-        };
-
-        const renderTask = page.render(renderContext);
-        renderTaskRef.current = renderTask;
-        await renderTask.promise;
+        const base = page.getViewport({ scale: 1 });
+        const viewport = page.getViewport({ scale: Math.min(availableWidth / base.width, 1.4) * scale });
+        const ratio = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = Math.ceil(viewport.width * ratio);
+        canvas.height = Math.ceil(viewport.height * ratio);
+        canvas.style.width = viewport.width + 'px';
+        canvas.style.height = viewport.height + 'px';
+        task = page.render({ canvas, canvasContext: canvas.getContext('2d'), viewport, transform: [ratio, 0, 0, ratio, 0, 0] });
+        renderTaskRef.current = task;
+        await task.promise;
       } catch (err) {
-        if (err.name !== 'RenderingCancelledException') {
-          console.error('Page render error:', err);
-        }
+        if (active && err.name !== 'RenderingCancelledException') setError('This page could not be displayed. Please try opening the story again.');
       }
-    };
+    })();
+    return () => { active = false; task?.cancel(); };
+  }, [pdfDoc, loading, currentPage, scale, availableWidth, isLockedPage]);
 
-    renderPage();
-  }, [pdfDoc, currentPage, scale, hasFullAccess, previewPagesLimit, loading]);
-
-  // Navigation handlers
-  const handlePrevPage = () => {
-    if (currentPage > 1) {
-      setCurrentPage((prev) => prev - 1);
-    }
-  };
-
-  const handleNextPage = () => {
-    const maxPage = hasFullAccess ? totalPages : previewPagesLimit + 1;
-    if (currentPage < maxPage) {
-      setCurrentPage((prev) => prev + 1);
-    }
-  };
-
-  // Zoom handlers
-  const handleZoomIn = () => setScale((prev) => Math.min(prev + 0.2, 2.5));
-  const handleZoomOut = () => setScale((prev) => Math.max(prev - 0.2, 0.7));
-  const handleFitWidth = () => {
-    if (containerRef.current) {
-      const containerWidth = containerRef.current.clientWidth - 48; // padding
-      // Standard A4 width is roughly 595pt
-      const newScale = Math.min(Math.max(containerWidth / 600, 0.7), 1.8);
-      setScale(parseFloat(newScale.toFixed(2)));
-    }
-  };
-
-  // Fullscreen toggle
-  const toggleFullscreen = () => {
-    if (!containerRef.current) return;
-    if (!document.fullscreenElement) {
-      containerRef.current.requestFullscreen().catch((err) => {
-        console.error('Fullscreen error:', err);
-      });
-      setIsFullscreen(true);
-    } else {
-      document.exitFullscreen();
-      setIsFullscreen(false);
-    }
+  const handlePrevPage = () => setCurrentPage((page) => Math.max(1, page - 1));
+  const handleNextPage = () => setCurrentPage((page) => Math.min(page + 1, hasFullAccess ? totalPages : visiblePages + 1));
+  const handleZoomIn = () => setScale((value) => Math.min(value + 0.2, 2.4));
+  const handleZoomOut = () => setScale((value) => Math.max(value - 0.2, 0.6));
+  const handleFitWidth = () => setScale(1);
+  const toggleFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await containerRef.current?.requestFullscreen?.();
+    } catch { /* Fullscreen may be unavailable on mobile browsers. */ }
   };
 
   return (
     <div
       ref={containerRef}
-      className="min-h-screen bg-[#1F1E1D] text-[#E8E1D9] flex flex-col selection:bg-[#581C24]"
+      className="h-dvh bg-[#1F1E1D] text-[#E8E1D9] flex flex-col selection:bg-[#581C24]"
     >
       {/* Reader Top Toolbar */}
       <header className="sticky top-0 z-30 bg-[#141211]/95 backdrop-blur-md border-b border-stone-800 px-4 py-3 flex flex-wrap items-center justify-between gap-3 shadow-md">
@@ -223,14 +169,14 @@ export const PdfReader = ({
             {isLockedPage ? (
               <span className="text-[#DFC07A] font-bold">LOCKED</span>
             ) : (
-              `Page ${currentPage} of ${hasFullAccess ? totalPages : previewPagesLimit}`
+              `Page ${currentPage} of ${visiblePages}`
             )}
           </span>
 
           <button
             onClick={handleNextPage}
             disabled={
-              (!hasFullAccess && currentPage > previewPagesLimit) ||
+              (!hasFullAccess && currentPage > visiblePages) ||
               (hasFullAccess && currentPage >= totalPages) ||
               loading
             }
@@ -245,7 +191,7 @@ export const PdfReader = ({
         <div className="flex items-center gap-1.5">
           <button
             onClick={handleZoomOut}
-            disabled={scale <= 0.8 || loading}
+            disabled={scale <= 0.6 || loading}
             className="p-1.5 rounded text-stone-400 hover:text-white hover:bg-stone-800 disabled:opacity-30 transition-colors"
             title="Zoom Out"
           >
@@ -267,7 +213,7 @@ export const PdfReader = ({
 
           <button
             onClick={handleFitWidth}
-            className="hidden sm:inline-flex px-2 py-1 text-xs text-stone-400 hover:text-white hover:bg-stone-800 rounded transition-colors"
+            className="inline-flex px-2 py-1 text-xs text-stone-400 hover:text-white hover:bg-stone-800 rounded transition-colors"
             title="Fit Width"
           >
             Fit
@@ -284,7 +230,7 @@ export const PdfReader = ({
       </header>
 
       {/* Reader Main Canvas Viewport */}
-      <main className="flex-1 flex items-center justify-center p-4 sm:p-8 overflow-auto">
+      <main className="flex-1 min-h-0 flex items-start justify-start p-4 sm:p-8 overflow-auto">
         {loading && (
           <div className="flex flex-col items-center gap-3 py-20 text-center">
             <RefreshCw className="w-8 h-8 text-[#DFC07A] animate-spin" />
@@ -309,12 +255,12 @@ export const PdfReader = ({
         )}
 
         {!loading && !error && (
-          <div className="flex flex-col items-center justify-center w-full">
+          <div className="flex flex-col items-center justify-center min-w-full w-max">
             {isLockedPage ? (
               <LockOverlay story={story} />
             ) : (
               <div className="shadow-2xl rounded-xs overflow-hidden border border-stone-800 bg-white transition-transform duration-200">
-                <canvas ref={canvasRef} className="block mx-auto max-w-full" />
+                <canvas ref={canvasRef} className="block mx-auto" />
               </div>
             )}
           </div>
@@ -325,19 +271,19 @@ export const PdfReader = ({
       <footer className="sm:hidden bg-[#141211] border-t border-stone-800 p-3 flex items-center justify-between text-xs text-stone-400">
         <button
           onClick={handlePrevPage}
-          disabled={currentPage <= 1}
+          disabled={currentPage <= 1 || loading || Boolean(error)}
           className="px-3 py-1.5 bg-stone-900 border border-stone-700 rounded text-stone-200 disabled:opacity-30"
         >
           Previous
         </button>
 
         <span>
-          {isLockedPage ? 'Locked' : `Page ${currentPage} / ${hasFullAccess ? totalPages : 2}`}
+          {isLockedPage ? 'Locked' : `Page ${currentPage} / ${visiblePages}`}
         </span>
 
         <button
           onClick={handleNextPage}
-          disabled={currentPage > previewPagesLimit && !hasFullAccess}
+          disabled={loading || Boolean(error) || (hasFullAccess ? currentPage >= totalPages : isLockedPage)}
           className="px-3 py-1.5 bg-stone-900 border border-stone-700 rounded text-stone-200 disabled:opacity-30"
         >
           Next

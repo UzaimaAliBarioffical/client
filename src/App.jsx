@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 
@@ -12,35 +12,35 @@ import { ProtectedRoute } from './components/common/ProtectedRoute';
 import { AdminRoute } from './components/common/AdminRoute';
 
 // Customer Pages
-import { Home } from './pages/Home';
-import { Stories } from './pages/Stories';
-import { StoryDetail } from './pages/StoryDetail';
-import { ReaderPage } from './pages/ReaderPage';
-import { Categories } from './pages/Categories';
-import { CategoryStories } from './pages/CategoryStories';
-import { Checkout } from './pages/Checkout';
-import { PaymentSuccess } from './pages/PaymentSuccess';
-import { Login } from './pages/Login';
-import { Register } from './pages/Register';
-import { ForgotPassword } from './pages/ForgotPassword';
-import { About } from './pages/About';
-import { Contact } from './pages/Contact';
-import { NotFound } from './pages/NotFound';
+const Home = lazy(() => import('./pages/Home').then((module) => ({ default: module.Home })));
+const Stories = lazy(() => import('./pages/Stories').then((module) => ({ default: module.Stories })));
+const StoryDetail = lazy(() => import('./pages/StoryDetail').then((module) => ({ default: module.StoryDetail })));
+const ReaderPage = lazy(() => import('./pages/ReaderPage').then((module) => ({ default: module.ReaderPage })));
+const Categories = lazy(() => import('./pages/Categories').then((module) => ({ default: module.Categories })));
+const CategoryStories = lazy(() => import('./pages/CategoryStories').then((module) => ({ default: module.CategoryStories })));
+const Checkout = lazy(() => import('./pages/Checkout').then((module) => ({ default: module.Checkout })));
+const PaymentSuccess = lazy(() => import('./pages/PaymentSuccess').then((module) => ({ default: module.PaymentSuccess })));
+const Login = lazy(() => import('./pages/Login').then((module) => ({ default: module.Login })));
+const Register = lazy(() => import('./pages/Register').then((module) => ({ default: module.Register })));
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword').then((module) => ({ default: module.ForgotPassword })));
+const About = lazy(() => import('./pages/About').then((module) => ({ default: module.About })));
+const Contact = lazy(() => import('./pages/Contact').then((module) => ({ default: module.Contact })));
+const NotFound = lazy(() => import('./pages/NotFound').then((module) => ({ default: module.NotFound })));
 
 // User Account Pages
-import { AccountLibrary } from './pages/account/AccountLibrary';
-import { AccountPayments } from './pages/account/AccountPayments';
-import { AccountProfile } from './pages/account/AccountProfile';
+const AccountLibrary = lazy(() => import('./pages/account/AccountLibrary').then((module) => ({ default: module.AccountLibrary })));
+const AccountPayments = lazy(() => import('./pages/account/AccountPayments').then((module) => ({ default: module.AccountPayments })));
+const AccountProfile = lazy(() => import('./pages/account/AccountProfile').then((module) => ({ default: module.AccountProfile })));
 
 // Admin Pages
-import { AdminLogin } from './pages/admin/AdminLogin';
-import { AdminDashboard } from './pages/admin/AdminDashboard';
-import { AdminStories } from './pages/admin/AdminStories';
-import { AdminStoryForm } from './pages/admin/AdminStoryForm';
-import { AdminCategories } from './pages/admin/AdminCategories';
-import { AdminPayments } from './pages/admin/AdminPayments';
-import { AdminUsers } from './pages/admin/AdminUsers';
-import { AdminPaymentSettings } from './pages/admin/AdminPaymentSettings';
+const AdminLogin = lazy(() => import('./pages/admin/AdminLogin').then((module) => ({ default: module.AdminLogin })));
+const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard').then((module) => ({ default: module.AdminDashboard })));
+const AdminStories = lazy(() => import('./pages/admin/AdminStories').then((module) => ({ default: module.AdminStories })));
+const AdminStoryForm = lazy(() => import('./pages/admin/AdminStoryForm').then((module) => ({ default: module.AdminStoryForm })));
+const AdminCategories = lazy(() => import('./pages/admin/AdminCategories').then((module) => ({ default: module.AdminCategories })));
+const AdminPayments = lazy(() => import('./pages/admin/AdminPayments').then((module) => ({ default: module.AdminPayments })));
+const AdminUsers = lazy(() => import('./pages/admin/AdminUsers').then((module) => ({ default: module.AdminUsers })));
+const AdminPaymentSettings = lazy(() => import('./pages/admin/AdminPaymentSettings').then((module) => ({ default: module.AdminPaymentSettings })));
 
 export default function App() {
   return (
@@ -65,6 +65,7 @@ export default function App() {
         }}
       />
 
+      <Suspense fallback={<div role="status" className="min-h-[60vh] flex items-center justify-center text-[#581C24] font-serif">Loading QissaGhar...</div>}>
       <Routes>
         {/* Fullscreen PDF Reader (No main navbar/footer for distraction-free reading) */}
         <Route path="/story/:slug/read" element={<ReaderPage />} />
@@ -142,6 +143,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/admin" replace />} />
         </Route>
       </Routes>
+      </Suspense>
     </>
   );
 }

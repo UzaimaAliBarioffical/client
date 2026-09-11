@@ -1,96 +1,72 @@
-import React from 'react';
-import { useLocation, Link, Navigate } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { useLocation, useSearchParams, Link, Navigate } from 'react-router-dom';
 import { Badge } from '../components/common/Badge';
-import {
-  CheckCircle2,
-  Clock,
-  Library,
-  CreditCard,
-  BookOpen,
-  ArrowRight,
-  ShieldCheck
-} from 'lucide-react';
+import { paymentService } from '../services/paymentService';
+import { CheckCircle2, Clock, Library, CreditCard, ArrowRight, AlertCircle, RefreshCw } from 'lucide-react';
 
 export const PaymentSuccess = () => {
   const location = useLocation();
-  const payment = location.state?.payment;
-  const story = location.state?.story;
+  const [searchParams] = useSearchParams();
+  const paymentId = searchParams.get('payment') || location.state?.payment?._id;
+  const [payment, setPayment] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [refresh, setRefresh] = useState(0);
+
+  useEffect(() => {
+    if (!paymentId) return;
+    let active = true;
+    setLoading(true);
+    setError('');
+    paymentService.getPaymentById(paymentId).then((res) => {
+      if (!res.success || !res.data) throw new Error('Payment record is unavailable.');
+      if (active) setPayment(res.data);
+    }).catch((err) => {
+      if (active) setError(err.response?.data?.message || 'Could not load your payment status.');
+    }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [paymentId, refresh]);
+
+  if (!paymentId) return <Navigate to="/account/payments" replace />;
+  const approved = payment?.status === 'Approved';
+  const rejected = payment?.status === 'Rejected';
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-16 text-center">
-      <div className="bg-white border border-[#E8E1D9] rounded-sm p-8 sm:p-12 shadow-sm">
-        {/* Success Icon */}
-        <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-6">
-          <CheckCircle2 className="w-9 h-9" />
-        </div>
-
-        <span className="inline-block px-3 py-1 rounded bg-amber-50 text-amber-800 text-xs font-mono uppercase tracking-wider mb-2 border border-amber-200">
-          Verification Request Submitted
-        </span>
-
-        <h1 className="font-serif text-3xl font-bold text-[#1A1A1A] mb-3">
-          Thank You! Your Payment Is Under Review
-        </h1>
-
-        <p className="text-sm text-stone-600 leading-relaxed mb-8 max-w-lg mx-auto">
-          We have received your payment verification request for{' '}
-          <strong className="text-stone-900 font-semibold">{story?.title || 'the story'}</strong>.
-          Our team is currently matching your transaction ID against bank records.
-        </p>
-
-        {/* Verification Summary Card */}
-        {payment && (
-          <div className="bg-[#FAF8F5] border border-[#E8E1D9] rounded p-5 mb-8 text-left text-xs space-y-2.5 font-sans">
-            <div className="flex justify-between items-center pb-2 border-b border-[#E8E1D9]">
-              <span className="text-stone-500">Review Status:</span>
-              <Badge variant="Pending">Pending Review</Badge>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-stone-500">Transaction ID (TRX/TID):</span>
-              <span className="font-mono font-bold text-stone-900">{payment.transactionId}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-stone-500">Payment Method:</span>
-              <span className="capitalize font-medium text-stone-900">{payment.paymentMethod}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-stone-500">Amount:</span>
-              <span className="font-serif font-bold text-sm text-[#581C24]">
-                PKR {payment.amount?.toLocaleString()}
-              </span>
-            </div>
+    <div className="max-w-2xl mx-auto px-4 py-12 text-center">
+      <div className="bg-white border border-[#E8E1D9] rounded-sm p-6 sm:p-10 shadow-sm">
+        {loading ? <div role="status" className="py-12 text-sm text-stone-600">Loading payment status...</div> : error ? (
+          <div role="alert" className="space-y-4 py-6">
+            <AlertCircle className="w-10 h-10 text-rose-600 mx-auto" />
+            <p className="text-sm text-rose-800">{error}</p>
           </div>
+        ) : payment && (
+          <>
+            <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6 ${approved ? 'bg-emerald-100 text-emerald-600' : rejected ? 'bg-rose-100 text-rose-600' : 'bg-amber-100 text-amber-700'}`}>
+              {approved ? <CheckCircle2 className="w-9 h-9" /> : rejected ? <AlertCircle className="w-9 h-9" /> : <Clock className="w-9 h-9" />}
+            </div>
+            <Badge variant={payment.status}>{payment.status}</Badge>
+            <h1 className="font-serif text-2xl sm:text-3xl font-bold text-[#1A1A1A] mt-4 mb-3">
+              {approved ? 'Your Story Is Unlocked' : rejected ? 'Your Payment Could Not Be Verified' : 'Your Payment Is Under Review'}
+            </h1>
+            <p className="text-sm text-stone-600 leading-relaxed mb-6">
+              {approved ? 'Your approved purchase is available in My Library.' : rejected ? 'Please read the review reason before submitting new proof.' : 'Your receipt has been submitted. An administrator must verify the transaction and approve it before this story unlocks.'}
+            </p>
+            <div className="bg-[#FAF8F5] border border-[#E8E1D9] rounded p-4 sm:p-5 mb-6 text-left text-xs space-y-3">
+              <div className="flex flex-wrap justify-between gap-2"><span className="text-stone-500">Story:</span><strong className="break-words">{payment.story?.title || 'Story unavailable'}</strong></div>
+              <div className="flex flex-wrap justify-between gap-2"><span className="text-stone-500">Transaction ID:</span><strong className="font-mono break-all">{payment.transactionId}</strong></div>
+              <div className="flex justify-between gap-2"><span className="text-stone-500">Payment Method:</span><span className="capitalize">{payment.paymentMethod}</span></div>
+              <div className="flex justify-between gap-2"><span className="text-stone-500">Amount:</span><strong className="text-[#581C24]">PKR {payment.amount?.toLocaleString()}</strong></div>
+            </div>
+            {rejected && <p role="status" className="bg-rose-50 border border-rose-200 text-rose-900 rounded p-4 mb-6 text-sm text-left">{payment.rejectionReason || 'Contact support for the review details.'}</p>}
+            {approved && payment.story && <Link to={`/story/${payment.story.slug}/read`} className="inline-block bg-[#581C24] text-white rounded px-6 py-3 text-sm mb-6">Read Full Story</Link>}
+            {rejected && payment.story && <Link to={`/checkout/${payment.story._id}`} className="inline-block bg-[#581C24] text-white rounded px-6 py-3 text-sm mb-6">Submit New Proof</Link>}
+          </>
         )}
-
-        {/* Notification details */}
-        <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded p-4 mb-8 text-left text-xs text-blue-900">
-          <Clock className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
-          <p className="leading-relaxed">
-            As soon as an administrator verifies the screenshot, this story will automatically
-            appear in <strong>My Library</strong> and the locked reader will become fully accessible.
-          </p>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-          <Link
-            to="/account/library"
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-[#581C24] hover:bg-[#4A121A] text-white text-xs font-semibold uppercase tracking-wider rounded transition-colors"
-          >
-            <Library className="w-4 h-4" /> Go to My Library
-          </Link>
-          <Link
-            to="/account/payments"
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-white border border-[#E8E1D9] hover:bg-[#FAF8F5] text-stone-800 text-xs font-semibold uppercase tracking-wider rounded transition-colors"
-          >
-            <CreditCard className="w-4 h-4" /> View Payment History
-          </Link>
-          <Link
-            to="/stories"
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 text-stone-600 hover:text-[#581C24] text-xs font-semibold uppercase tracking-wider transition-colors"
-          >
-            Browse More <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
+        <div className="flex flex-wrap items-center justify-center gap-3 text-xs">
+          <button disabled={loading} onClick={() => setRefresh((value) => value + 1)} className="inline-flex items-center gap-2 border border-[#E8E1D9] rounded px-4 py-2.5 hover:bg-[#FAF8F5] disabled:opacity-50"><RefreshCw className="w-4 h-4" />Refresh Status</button>
+          <Link to="/account/library" className="inline-flex items-center gap-2 px-4 py-2.5 text-[#581C24]"><Library className="w-4 h-4" />My Library</Link>
+          <Link to="/account/payments" className="inline-flex items-center gap-2 px-4 py-2.5 text-[#581C24]"><CreditCard className="w-4 h-4" />Payment History</Link>
+          <Link to="/stories" className="inline-flex items-center gap-2 px-4 py-2.5 text-stone-600">Browse More<ArrowRight className="w-3.5 h-3.5" /></Link>
         </div>
       </div>
     </div>

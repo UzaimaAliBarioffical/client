@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { User, Mail, Phone, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 export const Register = () => {
   const { register } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -40,7 +41,7 @@ export const Register = () => {
 
     if (res.success) {
       toast.success('Registration successful! Welcome to QissaGhar.');
-      navigate('/stories');
+      navigate(location.state?.from?.pathname || '/stories', { replace: true });
     } else {
       toast.error(res.message);
     }
@@ -171,7 +172,7 @@ export const Register = () => {
 
         <div className="text-center pt-2 border-t border-[#F3EFEA] text-xs text-stone-500">
           Already have an account?{' '}
-          <Link to="/login" className="text-[#581C24] font-semibold hover:underline">
+          <Link state={location.state} to="/login" className="text-[#581C24] font-semibold hover:underline">
             Sign in here
           </Link>
         </div>

@@ -1,3 +1,4 @@
+import { apiUrl } from '../services/api';
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { storyService } from '../services/storyService';
@@ -31,6 +32,7 @@ export const StoryDetail = () => {
   useEffect(() => {
     const fetchStory = async () => {
       setLoading(true);
+      setError(null);
       try {
         const res = await storyService.getStoryBySlug(slug);
         if (res.success) {
@@ -78,11 +80,7 @@ export const StoryDetail = () => {
     );
   }
 
-  const coverUrl = story.coverImage
-    ? story.coverImage.startsWith('http')
-      ? story.coverImage
-      : `/${story.coverImage.replace(/\\/g, '/')}`
-    : '/placeholder-cover.svg';
+  const coverUrl = story.coverImage ? apiUrl(story.coverImage) : '/placeholder-cover.svg';
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
@@ -106,7 +104,7 @@ export const StoryDetail = () => {
                 className="w-full h-full object-cover"
                 onError={(e) => {
                   e.target.onerror = null;
-                  e.target.src = 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=600&q=80';
+                  e.target.src = '/placeholder-cover.svg';
                 }}
               />
               <div className="absolute top-3 left-3 flex flex-col gap-1.5">

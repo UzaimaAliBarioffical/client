@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { paymentService } from '../services/paymentService';
 import { storyService } from '../services/storyService';
+import { apiUrl } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import {
   CreditCard,
@@ -28,7 +29,7 @@ export const Checkout = () => {
 
   const [story, setStory] = useState(null);
   const [methods, setMethods] = useState([]);
-  const [selectedMethod, setSelectedMethod] = useState('easypaisa');
+  const [selectedMethod, setSelectedMethod] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
@@ -45,44 +46,55 @@ export const Checkout = () => {
   const [screenshotPreview, setScreenshotPreview] = useState(null);
 
   useEffect(() => {
+    let active = true;
     const loadCheckoutData = async () => {
       setLoading(true);
+      setError(null);
       try {
-        const [methodsRes, storiesRes] = await Promise.all([
+        const [methodsRes, storyRes, paymentsRes] = await Promise.all([
           paymentService.getPaymentMethods(),
-          storyService.getStories()
+          storyService.getStoryById(storyId),
+          paymentService.getUserPayments()
         ]);
-
-        if (methodsRes.success) {
-          setMethods(methodsRes.data);
-          if (methodsRes.data.length > 0) {
-            setSelectedMethod(methodsRes.data[0].method);
-          }
+        if (!active) return;
+        if (!methodsRes.success || !storyRes.success || !storyRes.data) throw new Error('Checkout information is unavailable.');
+        const found = storyRes.data;
+        if (found.hasAccess || found.price === 0) {
+          navigate(`/story/${found.slug}/read`, { replace: true });
+          return;
         }
-
-        // Find the requested story
-        if (storiesRes.success) {
-          const found = storiesRes.data.find((s) => s._id === storyId);
-          if (found) {
-            setStory(found);
-          } else {
-            setError('Story not found.');
-          }
+        const pending = paymentsRes.data?.find((payment) => payment.story?._id === storyId && payment.status === 'Pending');
+        if (pending) {
+          navigate(`/payment/success?payment=${pending._id}`, { replace: true });
+          return;
         }
+        const enabled = methodsRes.data.filter((method) => method.isEnabled && method.accountTitle && method.accountNumber);
+        setMethods(enabled);
+        setSelectedMethod(enabled[0]?.method || '');
+        setStory(found);
+        if (!enabled.length) setError('Payments are temporarily unavailable. Please check again after the payment accounts have been configured.');
       } catch (err) {
-        setError('Failed to initialize checkout information.');
+        if (active) setError(err.response?.data?.message || err.message || 'Failed to initialize checkout information.');
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     };
 
     loadCheckoutData();
-  }, [storyId]);
+    return () => { active = false; };
+  }, [storyId, navigate]);
+
+  useEffect(() => {
+    if (!screenshotFile) { setScreenshotPreview(null); return; }
+    const url = URL.createObjectURL(screenshotFile);
+    setScreenshotPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [screenshotFile]);
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      if (!file.type.match(/image\/(jpeg|png|jpg|webp)/)) {
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
         toast.error('Only image files (JPG, PNG, WebP) are supported for screenshot.');
         return;
       }
@@ -91,20 +103,16 @@ export const Checkout = () => {
         return;
       }
       setScreenshotFile(file);
-      setScreenshotPreview(URL.createObjectURL(file));
     }
   };
 
   const handleRemoveScreenshot = () => {
     setScreenshotFile(null);
-    if (screenshotPreview) {
-      URL.revokeObjectURL(screenshotPreview);
-      setScreenshotPreview(null);
-    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitting || !story || !methods.some((method) => method.method === selectedMethod)) return;
 
     if (!senderName.trim() || !senderPhone.trim() || !transactionId.trim()) {
       toast.error('Please fill in all sender details and Transaction ID.');
@@ -120,6 +128,7 @@ export const Checkout = () => {
     try {
       const formData = new FormData();
       formData.append('storyId', story._id);
+      formData.append('amount', story.price);
       formData.append('paymentMethod', selectedMethod);
       formData.append('senderName', senderName.trim());
       formData.append('senderPhone', senderPhone.trim());
@@ -132,12 +141,7 @@ export const Checkout = () => {
 
       if (res.success) {
         toast.success('Payment submitted for verification!');
-        navigate('/payment/success', {
-          state: {
-            payment: res.data,
-            story
-          }
-        });
+        navigate(`/payment/success?payment=${res.data._id}`, { replace: true });
       }
     } catch (err) {
       const msg =
@@ -173,11 +177,7 @@ export const Checkout = () => {
     );
   }
 
-  const currentSetting = methods.find((m) => m.method === selectedMethod) || {
-    accountTitle: 'Story Platform',
-    accountNumber: '0300-1234567',
-    instructions: 'Send payment and upload screenshot.'
-  };
+  const currentSetting = methods.find((m) => m.method === selectedMethod);
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
@@ -202,11 +202,12 @@ export const Checkout = () => {
               Select Payment Method
             </h3>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 min-[380px]:grid-cols-2 gap-4">
               {methods.map((m) => (
                 <button
                   key={m.method}
                   type="button"
+                  aria-pressed={selectedMethod === m.method}
                   onClick={() => setSelectedMethod(m.method)}
                   className={`p-4 border rounded text-left transition-all flex flex-col justify-between ${
                     selectedMethod === m.method
@@ -275,6 +276,7 @@ export const Checkout = () => {
             <p className="text-xs text-stone-600 leading-relaxed font-sans bg-amber-50/70 p-3 rounded border border-amber-200">
               <strong>Instructions:</strong> {currentSetting.instructions}
             </p>
+            {currentSetting.qrImage && <img src={apiUrl(currentSetting.qrImage)} alt={`${selectedMethod} payment QR code`} className="w-40 h-40 object-contain mx-auto mt-4 border border-[#E8E1D9] rounded" />}
           </div>
 
           {/* Step 3: Proof Submission Form */}
@@ -314,8 +316,9 @@ export const Checkout = () => {
                 <div className="relative">
                   <Phone className="w-4 h-4 text-stone-400 absolute left-3 top-2.5" />
                   <input
-                    type="text"
+                    type="tel"
                     required
+                    maxLength={30}
                     value={senderPhone}
                     onChange={(e) => setSenderPhone(e.target.value)}
                     placeholder="0300XXXXXXX"
@@ -351,6 +354,7 @@ export const Checkout = () => {
                   <Calendar className="w-4 h-4 text-stone-400 absolute left-3 top-2.5" />
                   <input
                     type="date"
+                    max={new Date().toLocaleDateString('en-CA')}
                     value={paymentDate}
                     onChange={(e) => setPaymentDate(e.target.value)}
                     className="w-full pl-9 pr-3 py-2 text-xs border border-[#E8E1D9] rounded focus:outline-none focus:border-[#581C24]"
@@ -395,14 +399,14 @@ export const Checkout = () => {
                 <label className="border-2 border-dashed border-stone-300 hover:border-[#581C24] rounded-sm p-6 flex flex-col items-center justify-center cursor-pointer bg-[#FAF8F5] transition-colors">
                   <Upload className="w-8 h-8 text-stone-400 mb-2" />
                   <span className="text-xs font-semibold text-stone-700">
-                    Click to browse or drop payment screenshot
+                    Click to browse payment screenshot
                   </span>
                   <span className="text-[10px] text-stone-500 mt-1 font-mono">
                     PNG, JPG, or WebP up to 10MB
                   </span>
                   <input
                     type="file"
-                    accept="image/*"
+                    accept="image/jpeg,image/png,image/webp"
                     onChange={handleFileChange}
                     className="hidden"
                   />
@@ -454,13 +458,7 @@ export const Checkout = () => {
 
             <div className="flex gap-4 items-start">
               <img
-                src={
-                  story.coverImage
-                    ? story.coverImage.startsWith('http')
-                      ? story.coverImage
-                      : `/${story.coverImage.replace(/\\/g, '/')}`
-                    : '/placeholder-cover.svg'
-                }
+                src={story.coverImage ? apiUrl(story.coverImage) : '/placeholder-cover.svg'}
                 alt={story.title}
                 className="w-20 aspect-[3/4] object-cover rounded border border-[#E8E1D9] shrink-0"
               />
@@ -485,7 +483,7 @@ export const Checkout = () => {
               </div>
               <div className="flex justify-between text-stone-600">
                 <span>Digital Delivery</span>
-                <span className="text-emerald-600 font-semibold">FREE (Instant)</span>
+                <span className="text-emerald-600 font-semibold">After approval</span>
               </div>
               <div className="flex justify-between text-stone-600">
                 <span>Account Library Storage</span>
@@ -501,11 +499,11 @@ export const Checkout = () => {
 
             <div className="bg-[#FAF8F5] p-3.5 rounded border border-[#E8E1D9] space-y-2 text-[11px] text-stone-500">
               <p className="flex items-center gap-1.5 font-medium text-stone-700">
-                <Clock className="w-3.5 h-3.5 text-[#581C24]" /> Fast Manual Verification
+                <Clock className="w-3.5 h-3.5 text-[#581C24]" /> Manual Verification
               </p>
               <p className="leading-relaxed">
-                Payments are reviewed by admin staff within minutes. Once verified, the story
-                will immediately unlock in your "My Library" dashboard.
+                Your payment stays pending until an administrator checks the transaction and approves it.
+                Only this story will then unlock in your "My Library" dashboard.
               </p>
             </div>
           </div>

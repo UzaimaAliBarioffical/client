@@ -8,7 +8,12 @@ export const adminService = {
 
   // Stories
   async getStories(params = {}) {
-    const res = await api.get('/api/stories', { params });
+    const res = await api.get('/api/admin/stories', { params });
+    return res.data;
+  },
+
+  async getStory(id) {
+    const res = await api.get(`/api/admin/stories/${id}`);
     return res.data;
   },
 
@@ -64,6 +69,17 @@ export const adminService = {
 
   async approvePayment(id) {
     const res = await api.patch(`/api/payments/admin/${id}/approve`);
+    return res.data;
+  },
+
+  async getPaymentScreenshot(id, signal) {
+    const res = await api.get(`/api/payments/${id}/screenshot`, {
+      responseType: 'blob',
+      signal
+    });
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(res.data.type)) {
+      throw new Error('Receipt image is unavailable.');
+    }
     return res.data;
   },
 

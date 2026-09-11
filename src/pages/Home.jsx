@@ -61,7 +61,7 @@ export const Home = () => {
   const handleNewsletter = (e) => {
     e.preventDefault();
     if (newsletterEmail) {
-      toast.success('Thank you for subscribing to QissaGhar Gazette!');
+      toast('Newsletter subscriptions are not available yet. Please check back soon.');
       setNewsletterEmail('');
     }
   };

@@ -23,7 +23,7 @@ export const Navbar = () => {
   const location = useLocation();
 
   const handleLogout = async () => {
-    await logout();
+    if (!(await logout())) return;
     setUserMenuOpen(false);
     toast.success('Logged out successfully');
     navigate('/');

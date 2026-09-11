@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { storyService } from '../services/storyService';
 import { categoryService } from '../services/categoryService';
@@ -34,15 +34,24 @@ export const Stories = () => {
   const [sort, setSort] = useState(searchParams.get('sort') || 'newest');
   const [page, setPage] = useState(parseInt(searchParams.get('page') || '1', 10));
 
+  const [appliedSearch, setAppliedSearch] = useState(search);
+  const [appliedMin, setAppliedMin] = useState(minPrice);
+  const [appliedMax, setAppliedMax] = useState(maxPrice);
+  const [refresh, setRefresh] = useState(0);
+  const requestRef = useRef(null);
+
   // Fetch Categories once
   useEffect(() => {
     categoryService.getCategories().then((res) => {
       if (res.success) setCategories(res.data);
-    });
+    }).catch(() => {});
   }, []);
 
   // Fetch Stories whenever filters change
-  const fetchStories = async () => {
+  const fetchStories = useCallback(async () => {
+    requestRef.current?.abort();
+    const controller = new AbortController();
+    requestRef.current = controller;
     setLoading(true);
     setError(null);
     try {
@@ -52,14 +61,15 @@ export const Stories = () => {
         sort
       };
 
-      if (search) params.search = search;
+      if (appliedSearch) params.search = appliedSearch;
       if (selectedCategory && selectedCategory !== 'all') params.category = selectedCategory;
       if (selectedLanguage && selectedLanguage !== 'all') params.language = selectedLanguage;
       if (pricing && pricing !== 'all') params.pricing = pricing;
-      if (minPrice) params.minPrice = minPrice;
-      if (maxPrice) params.maxPrice = maxPrice;
+      if (appliedMin) params.minPrice = appliedMin;
+      if (appliedMax) params.maxPrice = appliedMax;
 
-      const res = await storyService.getStories(params);
+      const res = await storyService.getStories(params, { signal: controller.signal });
+      if (controller.signal.aborted) return;
       if (res.success) {
         setStories(res.data);
         if (res.pagination) {
@@ -67,26 +77,33 @@ export const Stories = () => {
         }
       }
     } catch (err) {
-      console.error('Fetch stories error:', err);
-      setError('Failed to load stories. Please check your network and try again.');
+      if (controller.signal.aborted) return;
+      setError(err.response?.data?.message || 'The story service is temporarily unavailable. Please try again shortly.');
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
-  };
+  }, [page, sort, selectedCategory, selectedLanguage, pricing, appliedSearch, appliedMin, appliedMax]);
 
   useEffect(() => {
     fetchStories();
-  }, [page, sort, selectedCategory, selectedLanguage, pricing]);
+    return () => requestRef.current?.abort();
+  }, [fetchStories, refresh]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
     setPage(1);
-    fetchStories();
+    setAppliedSearch(search.trim());
+    setAppliedMin(minPrice);
+    setAppliedMax(maxPrice);
+    setRefresh((value) => value + 1);
   };
 
   const handleApplyPriceFilter = () => {
     setPage(1);
-    fetchStories();
+    setAppliedSearch(search.trim());
+    setAppliedMin(minPrice);
+    setAppliedMax(maxPrice);
+    setRefresh((value) => value + 1);
   };
 
   const handleClearFilters = () => {
@@ -98,6 +115,10 @@ export const Stories = () => {
     setMaxPrice('');
     setSort('newest');
     setPage(1);
+    setAppliedSearch('');
+    setAppliedMin('');
+    setAppliedMax('');
+    setRefresh((value) => value + 1);
     setSearchParams({});
   };
 

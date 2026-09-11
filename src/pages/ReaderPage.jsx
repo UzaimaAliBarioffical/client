@@ -6,7 +6,7 @@ import { useAuth } from '../hooks/useAuth';
 
 export const ReaderPage = () => {
   const { slug } = useParams();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   const [story, setStory] = useState(null);
@@ -15,11 +15,15 @@ export const ReaderPage = () => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    if (authLoading) return;
+    let active = true;
     const initReader = async () => {
       setLoading(true);
       setError(null);
+      setHasFullAccess(false);
       try {
         const storyRes = await storyService.getStoryBySlug(slug);
+        if (!active) return;
         if (!storyRes.success || !storyRes.data) {
           setError('Story not found or not available.');
           setLoading(false);
@@ -30,11 +34,10 @@ export const ReaderPage = () => {
         setStory(storyData);
 
         // Check access if authenticated or if story is free
-        if (storyData.price === 0) {
-          setHasFullAccess(true);
-        } else if (isAuthenticated) {
+        if (isAuthenticated) {
           try {
             const accessRes = await storyService.checkStoryAccess(storyData._id);
+            if (!active) return;
             if (accessRes.success && accessRes.hasAccess) {
               setHasFullAccess(true);
             } else {
@@ -48,21 +51,22 @@ export const ReaderPage = () => {
         }
       } catch (err) {
         console.error('Error loading reader story:', err);
-        setError('Failed to load story for reading.');
+        if (active) setError('Failed to load story for reading.');
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     };
 
     initReader();
-  }, [slug, isAuthenticated]);
+    return () => { active = false; };
+  }, [slug, isAuthenticated, authLoading, user?._id]);
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <div className="min-h-screen bg-[#1F1E1D] flex flex-col items-center justify-center text-[#E8E1D9]">
         <div className="w-10 h-10 border-4 border-[#C5A059]/30 border-t-[#DFC07A] rounded-full animate-spin mb-4"></div>
         <p className="font-serif text-lg text-white">Opening Book Reader...</p>
-        <p className="text-xs text-stone-500 mt-1">Preparing protected typography</p>
+        <p className="text-xs text-stone-500 mt-1">Preparing your story</p>
       </div>
     );
   }

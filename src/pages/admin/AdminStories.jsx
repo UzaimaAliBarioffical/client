@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { adminService } from '../../services/adminService';
+import { apiUrl } from '../../services/api';
+import { Pagination } from '../../components/common/Pagination';
 import { Badge } from '../../components/common/Badge';
 import { Modal } from '../../components/common/Modal';
 import {
@@ -19,29 +21,40 @@ export const AdminStories = () => {
   const [stories, setStories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [submittedSearch, setSubmittedSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({ total: 0, totalPages: 1 });
+  const [error, setError] = useState('');
+  const requestVersion = useRef(0);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [storyToDelete, setStoryToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
   const fetchStories = async () => {
+    const request = ++requestVersion.current;
     setLoading(true);
+    setError('');
     try {
-      const res = await adminService.getStories({ search, limit: 50 });
-      if (res.success) setStories(res.data);
+      const res = await adminService.getStories({ search: submittedSearch, page, limit: 15 });
+      if (request !== requestVersion.current) return;
+      if (!res.success) throw new Error('Failed to load stories.');
+      setStories(res.data);
+      setPagination(res.pagination || { total: res.data.length, totalPages: 1 });
     } catch (err) {
-      toast.error('Failed to load stories.');
+      if (request === requestVersion.current) setError(err.response?.data?.message || 'Failed to load stories.');
     } finally {
-      setLoading(false);
+      if (request === requestVersion.current) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchStories();
-  }, []);
+  }, [page, submittedSearch]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
-    fetchStories();
+    setPage(1);
+    setSubmittedSearch(search.trim());
   };
 
   const confirmDelete = (story) => {
@@ -58,7 +71,8 @@ export const AdminStories = () => {
         toast.success('Story and associated PDFs deleted successfully.');
         setDeleteModalOpen(false);
         setStoryToDelete(null);
-        fetchStories();
+        if (stories.length === 1 && page > 1) setPage(page - 1);
+        else fetchStories();
       }
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to delete story.');
@@ -89,7 +103,7 @@ export const AdminStories = () => {
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="bg-white border border-[#E8E1D9] rounded-sm p-4 shadow-2xs flex items-center justify-between gap-4">
+      <div className="bg-white border border-[#E8E1D9] rounded-sm p-4 shadow-2xs flex flex-wrap items-center justify-between gap-4">
         <form onSubmit={handleSearchSubmit} className="flex-1 max-w-md relative">
           <Search className="w-4 h-4 text-stone-400 absolute left-3 top-2.5" />
           <input
@@ -108,11 +122,12 @@ export const AdminStories = () => {
         </form>
 
         <span className="text-xs text-stone-500 font-mono">
-          {stories.length} stories found
+          {pagination.total} stories found
         </span>
       </div>
 
       {/* Stories Table */}
+      {error && <div role="alert" className="p-4 bg-rose-50 border border-rose-200 rounded text-sm text-rose-800">{error} <button onClick={fetchStories} className="underline ml-2">Retry</button></div>}
       <div className="bg-white border border-[#E8E1D9] rounded-sm shadow-2xs overflow-hidden">
         {loading ? (
           <div className="flex justify-center py-16">
@@ -133,12 +148,9 @@ export const AdminStories = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#F3EFEA]">
+                {!error && stories.length === 0 && <tr><td colSpan={7} className="p-10 text-center text-stone-500">No stories found. Upload a story to get started.</td></tr>}
                 {stories.map((s) => {
-                  const coverUrl = s.coverImage
-                    ? s.coverImage.startsWith('http')
-                      ? s.coverImage
-                      : `/${s.coverImage.replace(/\\/g, '/')}`
-                    : '/placeholder-cover.svg';
+                  const coverUrl = s.coverImage ? apiUrl(s.coverImage) : '/placeholder-cover.svg';
 
                   return (
                     <tr key={s._id} className="hover:bg-[#FAF8F5] transition-colors">
@@ -147,6 +159,8 @@ export const AdminStories = () => {
                           <img
                             src={coverUrl}
                             alt={s.title}
+                            loading="lazy"
+                            decoding="async"
                             className="w-10 h-13 object-cover rounded border border-[#E8E1D9] shrink-0"
                           />
                           <div className="min-w-0">
@@ -193,6 +207,7 @@ export const AdminStories = () => {
                           <Link
                             to={`/story/${s.slug}`}
                             target="_blank"
+                            rel="noreferrer"
                             title="View Story Page"
                             className="p-1.5 text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded"
                           >
@@ -222,6 +237,8 @@ export const AdminStories = () => {
           </div>
         )}
       </div>
+
+      {!loading && !error && <Pagination currentPage={page} totalPages={pagination.totalPages} onPageChange={setPage} />}
 
       {/* Delete Confirmation Modal */}
       <Modal
