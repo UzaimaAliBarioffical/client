@@ -5,6 +5,7 @@ import { storyService } from '../services/storyService';
 import { useAuth } from '../hooks/useAuth';
 import { StoryCard } from '../components/common/StoryCard';
 import { Badge } from '../components/common/Badge';
+import { isUrduLanguage } from '../utils/language';
 import {
   BookOpen,
   Sparkles,
@@ -81,6 +82,7 @@ export const StoryDetail = () => {
   }
 
   const coverUrl = story.coverImage ? apiUrl(story.coverImage) : '/placeholder-cover.svg';
+  const isUrdu = isUrduLanguage(story.language || 'Urdu');
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
@@ -148,14 +150,14 @@ export const StoryDetail = () => {
               </div>
 
               {/* Title */}
-              <h1 className="font-serif text-3xl sm:text-5xl font-bold text-[#1A1A1A] leading-tight mb-2">
+              <h1 dir={isUrdu ? 'rtl' : 'auto'} lang={isUrdu ? 'ur' : undefined} className="font-serif text-3xl sm:text-5xl font-bold text-[#1A1A1A] leading-tight mb-2">
                 {story.title}
               </h1>
 
               {/* Author */}
               <p className="text-base text-stone-600 font-sans flex items-center gap-2 mb-6">
                 <span>By</span>
-                <span className="font-semibold text-stone-900">{story.author}</span>
+                <bdi className="font-semibold text-stone-900">{story.author}</bdi>
               </p>
 
               {/* Unlocked Status Banner (If User owns it) */}
@@ -174,7 +176,7 @@ export const StoryDetail = () => {
               )}
 
               {/* Description */}
-              <div className="prose prose-stone text-xs sm:text-sm text-stone-700 leading-relaxed max-w-none mb-6">
+              <div dir={isUrdu ? 'rtl' : 'auto'} lang={isUrdu ? 'ur' : undefined} className="prose prose-stone text-xs sm:text-sm text-stone-700 leading-relaxed max-w-none mb-6">
                 <p className="font-medium text-stone-900 text-sm sm:text-base mb-3 leading-relaxed">
                   {story.shortDescription}
                 </p>

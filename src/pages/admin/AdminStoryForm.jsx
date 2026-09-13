@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { adminService } from '../../services/adminService';
 import { apiUrl } from '../../services/api';
+import { normalizeLanguage, isUrduLanguage } from '../../utils/language';
 import {
   Upload,
   ArrowLeft,
@@ -36,6 +37,7 @@ export const AdminStoryForm = () => {
   const [tags, setTags] = useState('');
   const [isFeatured, setIsFeatured] = useState(false);
   const [status, setStatus] = useState('draft');
+  const textDirection = isUrduLanguage(language) ? 'rtl' : 'ltr';
 
   // File states
   const [coverFile, setCoverFile] = useState(null);
@@ -49,10 +51,12 @@ export const AdminStoryForm = () => {
     return val
       .toString()
       .toLowerCase()
+      .normalize('NFKC')
       .trim()
       .replace(/\s+/g, '-')
-      .replace(/[^\w-]+/g, '')
-      .replace(/--+/g, '-');
+      .replace(/[^\p{L}\p{N}-]/gu, '')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
   };
 
   const handleTitleChange = (e) => {
@@ -85,7 +89,7 @@ export const AdminStoryForm = () => {
             setSlug(found.slug);
             setAuthor(found.author);
             setCategory(found.category?._id || found.category || '');
-            setLanguage(found.language || 'Urdu');
+            setLanguage(normalizeLanguage(found.language || 'Urdu'));
             setPrice(found.price);
             setShortDescription(found.shortDescription || '');
             setDescription(found.description || '');
@@ -153,8 +157,8 @@ export const AdminStoryForm = () => {
       toast.error('Both cover image and PDF story file are required for new stories.');
       return;
     }
-    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug.trim())) {
-      toast.error('Use lowercase English letters, numbers and hyphens in the URL slug.');
+    if (!/^[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*$/u.test(slug.trim())) {
+      toast.error('Use letters, numbers and hyphens in the URL slug.');
       return;
     }
     if (!Number.isFinite(Number(price)) || Number(price) < 0 || !shortDescription.trim() || !description.trim()) {
@@ -260,6 +264,7 @@ export const AdminStoryForm = () => {
                 type="text"
                 required
                 maxLength={200}
+                dir={textDirection}
                 value={title}
                 onChange={handleTitleChange}
                 placeholder="e.g. Ishq e Majazi"
@@ -274,11 +279,13 @@ export const AdminStoryForm = () => {
               <input
                 type="text"
                 required
+                dir="ltr"
                 value={slug}
                 onChange={(e) => setSlug(e.target.value)}
                 placeholder="e.g. ishq-e-majazi"
                 className="w-full p-2.5 text-xs font-mono border border-[#E8E1D9] rounded focus:outline-none focus:border-[#581C24]"
               />
+              <p className="text-[11px] text-stone-500 mt-1">Urdu or English letters, numbers and hyphens are supported.</p>
             </div>
           </div>
 
@@ -290,6 +297,7 @@ export const AdminStoryForm = () => {
               <input
                 type="text"
                 required
+                dir={textDirection}
                 value={author}
                 onChange={(e) => setAuthor(e.target.value)}
                 placeholder="e.g. Farida Bano"
@@ -317,16 +325,18 @@ export const AdminStoryForm = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1">
+              <label htmlFor="story-language" className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1">
                 Language
               </label>
               <select
+                id="story-language"
                 value={language}
                 onChange={(e) => setLanguage(e.target.value)}
                 className="w-full p-2.5 text-xs border border-[#E8E1D9] bg-white rounded focus:outline-none focus:border-[#581C24]"
               >
-                <option value="Urdu">Urdu</option>
+                <option value="Urdu">Urdu / اردو</option>
                 <option value="English">English</option>
+                {!['Urdu', 'English'].includes(language) && <option value={language}>{language}</option>}
               </select>
             </div>
           </div>
@@ -348,10 +358,11 @@ export const AdminStoryForm = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1">
+              <label htmlFor="story-status" className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1">
                 Status
               </label>
               <select
+                id="story-status"
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
                 className="w-full p-2.5 text-xs border border-[#E8E1D9] bg-white rounded focus:outline-none focus:border-[#581C24]"
@@ -382,6 +393,7 @@ export const AdminStoryForm = () => {
               type="text"
               required
               maxLength={500}
+              dir={textDirection}
               value={shortDescription}
               onChange={(e) => setShortDescription(e.target.value)}
               placeholder="1-2 sentences capturing reader attention..."
@@ -396,6 +408,7 @@ export const AdminStoryForm = () => {
             <textarea
               rows={4}
               required
+              dir={textDirection}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Detailed background, context, and storyline overview..."

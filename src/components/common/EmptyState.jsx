@@ -8,7 +8,9 @@ export const EmptyState = ({
   message = 'We could not find any matches for your query.',
   actionText,
   actionLink,
-  onActionClick
+  onActionClick,
+  secondaryActionText,
+  secondaryActionLink
 }) => {
   return (
     <div className="text-center py-14 px-6 bg-white border border-[#E8E1D9] rounded-sm max-w-lg mx-auto my-8">
@@ -35,6 +37,11 @@ export const EmptyState = ({
             </button>
           )}
         </div>
+      )}
+      {secondaryActionText && secondaryActionLink && (
+        <Link to={secondaryActionLink} className="inline-block mt-4 text-sm font-semibold text-[#581C24] underline underline-offset-4 hover:text-[#856417]">
+          {secondaryActionText}
+        </Link>
       )}
     </div>
   );

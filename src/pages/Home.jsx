@@ -141,7 +141,8 @@ export const Home = () => {
               step: '01',
               title: 'Select a Story',
               desc: 'Explore curated novels, mystery thrillers, and classics across 8 distinct literary categories.',
-              icon: BookOpen
+              icon: BookOpen,
+              to: '/stories?language=Urdu'
             },
             {
               step: '02',
@@ -163,20 +164,22 @@ export const Home = () => {
             }
           ].map((item) => {
             const Icon = item.icon;
+            const Card = item.to ? Link : 'div';
             return (
-              <div
+              <Card
                 key={item.step}
-                className="bg-white border border-[#E8E1D9] p-6 rounded-sm relative hover:border-[#C5A059] transition-all shadow-2xs group"
+                {...(item.to ? { to: item.to } : {})}
+                className="block bg-white border border-[#E8E1D9] p-6 rounded-sm relative hover:border-[#C5A059] transition-all shadow-2xs group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#581C24] focus-visible:ring-offset-4"
               >
                 <span className="font-serif text-4xl font-bold text-[#E8E1D9] group-hover:text-[#C5A059]/40 transition-colors absolute top-4 right-4">
                   {item.step}
                 </span>
                 <div className="w-10 h-10 rounded bg-[#581C24]/10 text-[#581C24] flex items-center justify-center mb-4">
-                  <Icon className="w-5 h-5" />
+                  <Icon className="w-5 h-5" aria-hidden="true" />
                 </div>
                 <h3 className="font-serif text-lg font-bold text-[#1A1A1A] mb-2">{item.title}</h3>
                 <p className="text-xs text-stone-600 leading-relaxed">{item.desc}</p>
-              </div>
+              </Card>
             );
           })}
         </div>
